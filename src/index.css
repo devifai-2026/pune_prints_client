@@ -1,78 +1,72 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Sora:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Graphik:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
+  /* Brand palette — all derived from #1a56db (hsl 222 78% 48%) */
+  /* Primary */
+  --color-vp-blue: #1a56db;
+  --color-vp-blue-hover: #1746b8;       /* darken 10% */
+  --color-vp-blue-dark: #11317f;        /* darken 25% — for hero gradients */
+  --color-vp-blue-light: #eaf0fb;       /* tint 90% — pale wash */
+  --color-vp-blue-soft: #c9d8f4;        /* tint 70% — for hover/focus rings */
+
+  /* Complementary accents — share saturation/value with primary so nothing fights */
+  --color-vp-red: #db1a3f;              /* hsl 351 78% 48% — complement, same S/L */
+  --color-vp-red-light: #fbeaef;
+  --color-vp-yellow: #f5b800;           /* hsl 45 100% 48% — warm anchor */
+  --color-vp-yellow-light: #fff4d6;
+  --color-vp-green: #1adb98;            /* hsl 157 78% 48% — analogous to blue */
+  --color-vp-green-dark: #119a6b;
+
+  /* Aliases used across the codebase */
   --color-primary-blue: #1a56db;
-  --color-primary-dark: #1e40af;
-  --color-accent-orange: #ff6b2b;
-  --color-success-green: #10b981;
-  --color-error-red: #ef4444;
-  --color-text-dark: #111827;
-  --color-text-medium: #374151;
-  --color-text-light: #6b7280;
-  --color-border: #e5e7eb;
-  --color-surface: #f8f9fc;
-  --color-dark-bg: #0f172a;
-  --color-footer-bg: #111827;
+  --color-primary-dark: #11317f;
+  --color-accent-orange: #db1a3f;       /* mapped to brand red */
+  --color-success-green: #119a6b;
+  --color-error-red: #db1a3f;
 
-  --font-display: "Sora", sans-serif;
-  --font-body: "DM Sans", sans-serif;
-  --font-mono: "Space Mono", monospace;
+  /* Neutrals — cool, slightly blue-tinted so they harmonise with primary */
+  --color-text-dark: #0e1426;           /* deep navy-black */
+  --color-text-medium: #2a3650;
+  --color-text-light: #5f6b85;
+  --color-text-muted: #8590a8;
 
-  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06), 0 0 1px rgba(0, 0, 0, 0.08);
-  --shadow-card-hover: 0 12px 32px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.08);
-  --shadow-overlay: 0 20px 60px rgba(0, 0, 0, 0.20);
-  --shadow-focus: 0 0 0 3px rgba(26, 86, 219, 0.25);
-  --shadow-glass: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  --color-border: #c8d1e3;
+  --color-border-light: #e6eaf2;
+  --color-surface: #f3f5fa;             /* faint blue-grey, not pure grey */
+  --color-surface-alt: #f8f9fc;
+
+  --font-display: "Inter", system-ui, -apple-system, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, monospace;
+
+  --shadow-card: 0 1px 2px rgba(14, 20, 38, 0.05);
+  --shadow-card-hover: 0 4px 16px rgba(26, 86, 219, 0.08);
+  --shadow-overlay: 0 12px 32px rgba(14, 20, 38, 0.12);
+  --shadow-focus: 0 0 0 2px rgba(26, 86, 219, 0.25);
 }
 
 @layer base {
   body {
     font-family: var(--font-body);
     color: var(--color-text-dark);
+    background: #ffffff;
     @apply antialiased;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
-    @apply tracking-tight;
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
 
-  @keyframes scroll {
-    0% { transform: translateX(0); }
-    100% { transform: translateX(calc(-50% - 2rem)); }
+  /* Subtle link defaults like vistaprint.in */
+  a {
+    text-decoration: none;
   }
 }
 
 @layer utilities {
-  .glass-card {
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-  }
-
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-blue to-primary-dark;
-  }
-
-  .text-gradient-orange {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-accent-orange to-[#ff8c00];
-  }
-
-  .mesh-gradient {
-    background-color: #ffffff;
-    background-image: 
-      radial-gradient(at 0% 0%, rgba(26, 86, 219, 0.05) 0px, transparent 50%),
-      radial-gradient(at 100% 0%, rgba(255, 107, 43, 0.05) 0px, transparent 50%),
-      radial-gradient(at 100% 100%, rgba(26, 86, 219, 0.05) 0px, transparent 50%),
-      radial-gradient(at 0% 100%, rgba(255, 107, 43, 0.05) 0px, transparent 50%);
-  }
-
-  .perspective-1000 {
-    perspective: 1000px;
-  }
-
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
@@ -81,8 +75,19 @@
     scrollbar-width: none;
   }
 
-  @keyframes shimmer {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
+  /* Placeholder image pattern for product thumbnails */
+  .ph-image {
+    background-color: #f0f0f0;
+    background-image:
+      linear-gradient(45deg, #e6e6e6 25%, transparent 25%),
+      linear-gradient(-45deg, #e6e6e6 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #e6e6e6 75%),
+      linear-gradient(-45deg, transparent 75%, #e6e6e6 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  }
+
+  .ph-image-solid {
+    background: #f0f0f0;
   }
 }

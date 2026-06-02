@@ -1,138 +1,154 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Mail, Lock, Eye, EyeOff, ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, ArrowLeft, ShieldCheck, Truck, RotateCcw } from "lucide-react";
+import { useAuth } from "@/context/AuthContext.jsx";
 
 export default function Login() {
-  const [hasError, setHasError] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { login } = useAuth();
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleLogin = (e) => {
+  const hasError = Boolean(errorMsg);
+
+  const handleLogin = async (e) => {
     e.preventDefault();
+    setErrorMsg("");
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const user = await login({ email, password });
+      // Send admins straight to their dashboard; otherwise honour the redirect
+      // hint set by route guards (state.from) or fall back to home.
+      const redirectTo = user.role === "admin"
+        ? "/admin"
+        : (location.state?.from || "/");
+      navigate(redirectTo, { replace: true });
+    } catch (err) {
+      setErrorMsg(err?.message || "Invalid email or password");
+    } finally {
       setIsLoading(false);
-      setHasError(true);
-    }, 1500);
+    }
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-white font-body">
-      {/* Left Panel: Form */}
-      <div className="w-full lg:w-[45%] flex flex-col px-8 sm:px-16 lg:px-24 py-10 h-full overflow-y-auto no-scrollbar">
-        <div className="w-full max-w-md mx-auto pt-4 mb-8 flex-shrink-0">
-          <Link to="/" className="inline-flex items-center gap-2 text-text-light hover:text-text-dark transition-colors font-medium text-sm">
-            <ArrowLeft size={16} /> Back to Home
+    <div className="flex min-h-screen bg-white">
+      {/* Form panel */}
+      <div className="w-full lg:w-1/2 flex flex-col px-6 sm:px-12 lg:px-16 py-6">
+        <div className="max-w-[420px] w-full mx-auto">
+          <Link to="/" className="inline-flex items-center gap-2 text-[13px] text-text-light hover:text-vp-blue mb-8">
+            <ArrowLeft size={14} /> Back to home
           </Link>
-        </div>
-        
-        <div className="w-full max-w-md mx-auto my-auto pb-10">
-          <div className="mb-10">
-            <h2 className="font-display font-black text-4xl text-text-dark mb-3 tracking-tight">Welcome back.</h2>
-            <p className="text-text-light text-lg">Log in to your account to continue.</p>
+
+          <div className="flex items-center gap-2 mb-8">
+            <div className="w-9 h-9 bg-vp-blue text-white flex items-center justify-center font-bold text-lg rounded-sm">P</div>
+            <span className="font-bold text-[20px] text-vp-blue">Pune Prints</span>
           </div>
-          
-          <div className="flex flex-col gap-4 mb-8">
-            <button className="w-full h-12 rounded-xl border border-border bg-white hover:bg-gray-50 flex items-center justify-center gap-3 font-bold text-text-dark transition-all shadow-sm">
-              <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
+
+          <h1 className="text-[28px] font-bold text-text-dark tracking-tight mb-1">Sign in</h1>
+          <p className="text-[14px] text-text-light mb-6">to your Pune Prints account</p>
+
+          <div className="flex flex-col gap-2 mb-5">
+            <button className="w-full h-11 border border-border rounded-sm bg-white hover:bg-surface flex items-center justify-center gap-3 text-[14px] font-medium text-text-dark">
+              <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="" className="w-5 h-5" />
               Continue with Google
             </button>
-            <button className="w-full h-12 rounded-xl border border-border bg-white hover:bg-gray-50 flex items-center justify-center gap-3 font-bold text-text-dark transition-all shadow-sm">
-              <svg className="w-5 h-5 text-[#1877F2]" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+            <button className="w-full h-11 border border-border rounded-sm bg-white hover:bg-surface flex items-center justify-center gap-3 text-[14px] font-medium text-text-dark">
+              <svg className="w-5 h-5 text-[#1877F2]" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" /></svg>
               Continue with Facebook
             </button>
           </div>
 
-          <div className="flex items-center gap-4 mb-8">
-            <div className="h-px bg-border flex-1"></div>
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">or login with email</span>
-            <div className="h-px bg-border flex-1"></div>
+          <div className="flex items-center gap-3 my-5">
+            <div className="h-px bg-border-light flex-1" />
+            <span className="text-[11px] text-text-light uppercase tracking-wide">or with email</span>
+            <div className="h-px bg-border-light flex-1" />
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="space-y-4">
             {hasError && (
-              <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm font-medium border border-red-100 flex items-center gap-3">
-                <ShieldCheck size={18} className="text-red-500" />
-                Invalid credentials. Please try again.
+              <div className="px-3 py-2.5 bg-vp-red-light border border-vp-red/20 text-vp-red text-[13px] rounded-sm flex items-center gap-2">
+                <ShieldCheck size={14} />
+                {errorMsg}
               </div>
             )}
-            
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-text-dark">Email Address</label>
+            <div>
+              <label className="block text-[13px] font-semibold text-text-dark mb-1.5">Email address</label>
               <Input
                 type="email"
-                placeholder="hello@company.com"
-                className="h-14 rounded-xl border-gray-200 bg-gray-50/50"
-                leftIcon={<Mail size={18} className="text-gray-400" />}
+                placeholder="name@example.com"
+                leftIcon={<Mail size={16} />}
                 error={hasError}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
               />
             </div>
-            
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-bold text-text-dark">Password</label>
-                <a href="#" className="text-sm font-bold text-primary-blue hover:text-blue-700 transition-colors">Forgot password?</a>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[13px] font-semibold text-text-dark">Password</label>
+                <a href="#" className="text-[12px] text-vp-blue hover:underline">Forgot?</a>
               </div>
               <Input
                 type={showPassword ? "text" : "password"}
-                placeholder="••••••••"
-                className="h-14 rounded-xl border-gray-200 bg-gray-50/50"
-                leftIcon={<Lock size={18} className="text-gray-400" />}
-                error={hasError}
+                placeholder="Enter password"
+                leftIcon={<Lock size={16} />}
                 rightIcon={
-                  showPassword ? 
-                  <EyeOff size={18} className="text-gray-400 hover:text-text-dark cursor-pointer transition-colors" onClick={() => setShowPassword(false)} /> : 
-                  <Eye size={18} className="text-gray-400 hover:text-text-dark cursor-pointer transition-colors" onClick={() => setShowPassword(true)} />
+                  showPassword
+                    ? <EyeOff size={16} className="cursor-pointer hover:text-text-dark" onClick={() => setShowPassword(false)} />
+                    : <Eye size={16} className="cursor-pointer hover:text-text-dark" onClick={() => setShowPassword(true)} />
                 }
+                error={hasError}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
               />
             </div>
 
-            <Button type="submit" disabled={isLoading} className="w-full h-14 rounded-xl text-base font-black tracking-wide mt-4 shadow-xl shadow-primary-blue/20">
-              {isLoading ? (
-                <div className="flex items-center justify-center gap-2">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Signing in...</span>
-                </div>
-              ) : "Sign In"}
+            <label className="flex items-center gap-2 text-[13px] text-text-medium cursor-pointer">
+              <input type="checkbox" className="w-4 h-4 accent-vp-blue" />
+              Keep me signed in
+            </label>
+
+            <Button type="submit" disabled={isLoading} size="lg" className="w-full">
+              {isLoading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
 
-          <p className="mt-8 text-center text-text-light font-medium">
-            Don't have an account? <Link to="/signup" className="text-primary-blue font-bold hover:underline">Sign up for free</Link>
+          <p className="mt-6 text-center text-[13px] text-text-medium">
+            New to Pune Prints? <Link to="/signup" className="text-vp-blue font-semibold hover:underline">Create an account</Link>
           </p>
         </div>
       </div>
 
-      {/* Right Panel: Showcase */}
-      <div className="hidden lg:flex flex-1 relative bg-surface overflow-hidden p-8">
-        <div className="absolute inset-0 bg-[#F4F7FB]"></div>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(209,213,219,0.5)_1px,transparent_1px)] bg-[size:24px_24px] opacity-60"></div>
-        
-        {/* Abstract shapes */}
-        <div className="absolute top-[-10%] right-[-5%] w-[600px] h-[600px] bg-blue-400/20 rounded-full blur-[80px]"></div>
-        <div className="absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] bg-purple-400/20 rounded-full blur-[80px]"></div>
-
-        <div className="relative z-10 w-full h-full bg-white/40 backdrop-blur-3xl rounded-[40px] border border-white/60 shadow-[0_30px_60px_rgba(0,0,0,0.05)] overflow-hidden flex flex-col items-center justify-center p-16">
-          <div className="text-center mb-12">
-             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-border shadow-sm mb-6">
-               <Sparkles size={14} className="text-primary-blue" />
-               <span className="text-xs font-bold uppercase tracking-widest text-text-dark">Premium Quality</span>
-             </div>
-             <h3 className="font-display font-black text-5xl leading-tight text-text-dark tracking-tighter mb-4">
-               Crafting Your<br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">Brand's Legacy.</span>
-             </h3>
-             <p className="text-lg text-text-light font-medium max-w-md mx-auto">
-               Access our world-class design studio and turn your ideas into premium print products.
-             </p>
-          </div>
-
-          <div className="relative w-full max-w-lg aspect-video rounded-3xl bg-white shadow-2xl border border-white/50 overflow-hidden group">
-            <img src="/assets/hero-banner.png" alt="Showcase" className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
-          </div>
+      {/* Side panel */}
+      <div className="hidden lg:flex w-1/2 bg-vp-blue text-white items-center justify-center p-12 relative">
+        <div className="max-w-md">
+          <h2 className="text-[32px] font-bold leading-tight mb-4">Welcome back to Pune Prints</h2>
+          <p className="text-[15px] text-white/85 mb-8 leading-relaxed">
+            Pick up where you left off — your saved designs, recent orders and reorder lists are all here.
+          </p>
+          <ul className="space-y-3 text-[14px]">
+            {[
+              { icon: Truck, text: "Track open orders and shipments" },
+              { icon: RotateCcw, text: "One-click reorder of favourites" },
+              { icon: ShieldCheck, text: "Save designs and edit any time" },
+            ].map(({ icon: Icon, text }) => (
+              <li key={text} className="flex items-center gap-3">
+                <Icon size={18} className="text-vp-yellow" />
+                <span>{text}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </div>

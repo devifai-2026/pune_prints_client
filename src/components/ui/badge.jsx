@@ -3,17 +3,17 @@ import { cn } from "@/lib/utils"
 
 function Badge({ className, variant = "blue", ...props }) {
   return (
-    <div
+    <span
       className={cn(
-        "inline-flex items-center rounded-full px-[10px] py-[4px] text-[13px] font-medium transition-colors",
+        "inline-flex items-center rounded-sm px-2 py-0.5 text-[11px] font-semibold leading-none",
         {
-          "bg-blue-50 text-primary-blue": variant === "blue",
-          "bg-orange-50 text-accent-orange": variant === "orange",
-          "bg-emerald-50 text-success-green": variant === "green",
-          "bg-red-50 text-error-red": variant === "red",
-          "bg-gray-900 text-white": variant === "dark",
+          "bg-vp-blue text-white": variant === "blue",
+          "bg-vp-red text-white": variant === "red",
+          "bg-vp-yellow text-vp-blue": variant === "yellow",
+          "bg-vp-green text-white": variant === "green",
+          "bg-text-dark text-white": variant === "dark",
           "border border-current bg-transparent": variant === "outlined",
-          "bg-gray-100 text-gray-700": variant === "gray",
+          "bg-surface text-text-dark": variant === "gray",
         },
         className
       )}

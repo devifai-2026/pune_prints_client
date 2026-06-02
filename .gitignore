@@ -1,8 +1,31 @@
+# Dependencies (workspaces hoist most to root, but apps may have their own)
 node_modules/
+**/node_modules/
+
+# Build output
 build/
 dist/
+**/dist/
+
+# Test + coverage
 coverage/
+**/coverage/
+
+# Vite cache
+.vite/
+**/.vite/
+
+# OS
 .DS_Store
 *.log
-.env*
+
+# Env — never commit secrets. Keep .env.example committed for reference.
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
 !.env.example
+
+# Server lives in its own repo (pune_prints_server)
+server/
