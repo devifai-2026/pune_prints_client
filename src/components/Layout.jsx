@@ -247,6 +247,15 @@ export default function Layout() {
         <nav className="hidden lg:block border-t border-border-light relative bg-white">
           <div className="max-w-[1400px] mx-auto px-4">
             <ul className="flex items-center gap-1">
+              {/* Direct link to the full catalog (no dropdown). */}
+              <li onMouseEnter={() => setActiveMenu(null)} className="relative">
+                <Link
+                  to="/products"
+                  className="relative inline-flex items-center h-11 px-3 text-[13px] font-semibold whitespace-nowrap text-text-dark hover:text-vp-blue transition-colors"
+                >
+                  View all
+                </Link>
+              </li>
               {navCategories.map((cat) => (
                 <li
                   key={cat.name}
