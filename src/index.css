@@ -64,6 +64,20 @@
   a {
     text-decoration: none;
   }
+
+  /* Tailwind v4 dropped the default `cursor: pointer` on buttons.
+     Restore it so every interactive control shows a pointer. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  label[for],
+  summary {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
 }
 
 @layer utilities {

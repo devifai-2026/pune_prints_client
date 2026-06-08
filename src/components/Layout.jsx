@@ -1,72 +1,36 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Outlet, Link } from "react-router-dom";
-import { Search, ShoppingCart, X, ChevronDown, ChevronRight, Menu, User, Phone, HelpCircle, MapPin, Heart, Facebook, Instagram, Twitter, Youtube, LogOut } from "lucide-react";
+import HireDesignerModal from "@/components/HireDesignerModal.jsx";
+import BulkOrderModal from "@/components/BulkOrderModal.jsx";
+import { Search, ShoppingCart, X, ChevronDown, ChevronRight, Menu, User, Phone, HelpCircle, MapPin, Heart, Package, Settings, Facebook, Instagram, Twitter, Youtube, LogOut } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext.jsx";
+import { useWishlist } from "@/context/WishlistContext.jsx";
+import { formatPhone } from "@/lib/utils";
+import { publicMap as fetchSettings } from "@/api/settings";
+import { list as fetchCategories } from "@/api/categories";
 
-const megaMenu = {
-  "View All": [
-    {
-      heading: "Business Essentials",
-      links: ["Visiting Cards", "Signs & Posters", "Marketing Materials", "Stationery, Letterheads & Billbooks", "Labels & Stickers", "Office Supplies"],
-    },
-    {
-      heading: "Love Your New Look",
-      links: ["Clothing", "Caps", "Bags", "T-Shirts", "Polo T-Shirts", "Custom Office Shirts"],
-    },
-    {
-      heading: "Made By You",
-      links: ["Photo Albums", "Personalized Pens", "Calendars"],
-    },
-    {
-      heading: "Home & Gifts",
-      links: ["Mugs", "Drinkware", "Gift Hampers"],
-    },
-  ],
-  "Visiting Cards": [
-    { heading: "Visiting Cards", links: ["Standard VC", "Classic VC", "Round Corner VC", "Square VC", "Shape VC"] },
-    { heading: "Digital Visiting Cards", links: ["QR Code VC"] },
-    { heading: "Brilliant Finishes", links: ["Spot UV Visiting Cards", "Foil Visiting Cards"] },
-    { heading: "Standard Papers", links: ["Glossy Visiting Cards", "Matte Visiting Cards"] },
-    { heading: "Premium Papers", links: ["Non Tearable Visiting Cards", "Metallic Sparkle Visiting Cards", "Kraft Visiting Cards"] },
-  ],
-  "Stationery & Letterheads": [
-    { heading: "Custom Stationery", links: ["Letterheads", "Billbooks", "Custom Mouse Pads", "Bulk Letterheads", "Custom Pens"] },
-    { heading: "Office Supplies", links: ["Lanyards", "ID Cards", "Invoice Books", "Custom Certificates", "Cash Vouchers", "Paper Identity Cards", "Employee Welcome Kit"] },
-    { heading: "Custom Keychain", links: ["Acrylic Keychain", "Metal Keychains", "Custom Keychains"] },
-    { heading: "Wedding Stationery", links: ["Wedding Invitations", "Save the Date Cards", "Wedding Menu"] },
-    { heading: "Invitations & Announcements", links: ["Thank You Cards", "Invitations (Wedding, Birthday, Party)", "Gift Tags"] },
-  ],
-  "Signs, Posters & Marketing": [
-    { heading: "Signs and Posters", links: ["Standees", "Posters", "Banners", "Foam Boards", "Tabletop Signs", "Tent Cards"] },
-    { heading: "Marketing Materials", links: ["Flyers", "Brochures", "Booklets", "Postcards", "Bookmarks"] },
-    { heading: "More in Marketing", links: ["Menu Cards", "Loyalty Cards", "Paper Bags", "Custom Keychains", "QR Code Stand"] },
-    { heading: "More in Signs", links: ["Outdoor Signs"] },
-  ],
-  "Labels, Stickers & Packaging": [
-    { heading: "Custom Packaging", links: ["Custom Paper Bags", "Printed Carry Bags"] },
-    { heading: "Custom Stickers", links: ["Sheet Stickers", "Shape Stickers", "QR Code Stickers", "Visiting Cards Stickers", "Transparent Stickers"] },
-    { heading: "Tags", links: ["Hand Tags", "Baggage Tags", "Name Tags"] },
-  ],
-  "Clothing & Caps": [
-    { heading: "T-Shirts", links: ["Mens T-Shirts", "Womens T-Shirts", "Kids T-Shirts"] },
-    { heading: "Polo T-Shirts", links: ["Mens Polo T-Shirts", "Womens Polo T-Shirts"] },
-    { heading: "Shirts", links: ["Mens Embroidered Shirts", "Womens Embroidered Shirts"] },
-    { heading: "Caps", links: ["Embroidered Caps", "Printed Caps"] },
-  ],
-  "Mugs, Albums & Gifts": [
-    { heading: "Mugs", links: ["Personalised Mugs", "Color Changing Mugs"] },
-    { heading: "Drinkware", links: ["Bottle", "Tumbler", "Thermos Bottle"] },
-    { heading: "Pen", links: ["Customised Pen"] },
-    { heading: "Calendars", links: ["Desk Calendars", "Wall Calendars", "Flip Desk Calendars", "Poster Calendars", "Photo Calendars"] },
-  ],
-};
 
-const navItems = Object.keys(megaMenu);
+// Underline the promo code wherever it appears inside the announcement text.
+function renderWithCode(text, code) {
+  const idx = text.indexOf(code);
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <span className="underline">{code}</span>
+      {text.slice(idx + code.length)}
+    </>
+  );
+}
 
 export default function Layout() {
   const [showBanner, setShowBanner] = useState(true);
+  const [announcement, setAnnouncement] = useState(null); // { enabled, text, code }
+  const [categories, setCategories] = useState([]); // live nav categories + subcategories
+  const [hireOpen, setHireOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState(null);
   const [mobileExpanded, setMobileExpanded] = useState(null);
@@ -74,11 +38,34 @@ export default function Layout() {
   const userMenuRef = useRef(null);
   const { totalItems } = useCart();
   const { user, isAuthenticated, logout } = useAuth();
+  const { count: wishlistCount } = useWishlist();
 
   const closeMobileMenu = () => {
     setMobileMenuOpen(false);
     setMobileExpanded(null);
   };
+
+  // Pull the admin-managed announcement bar + live categories (for the navbar).
+  useEffect(() => {
+    let cancelled = false;
+    fetchSettings()
+      .then((map) => { if (!cancelled) setAnnouncement(map?.home_content?.announcement || null); })
+      .catch(() => {});
+    fetchCategories()
+      .then((cats) => { if (!cancelled) setCategories(cats || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Build the navbar mega-menu from live categories. Each category is a nav
+  // item; its active subcategories are the dropdown links.
+  const navCategories = categories
+    .filter((c) => c.isActive !== false)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((c) => ({
+      name: c.name,
+      subcategories: (c.subcategories || []).filter((s) => s.isActive !== false),
+    }));
 
   // Click-outside for the user menu
   useEffect(() => {
@@ -99,11 +86,15 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      {/* Promo strip (red) */}
-      {showBanner && (
+      {/* Announcement bar (red) — admin-managed via home_content.announcement */}
+      {showBanner && announcement?.enabled !== false && announcement?.text && (
         <div className="bg-vp-red text-white text-[12px] relative">
           <div className="max-w-[1400px] mx-auto px-4 py-2 flex items-center justify-center text-center">
-            <span className="font-semibold">Get 30% OFF your first order. Use code <span className="underline">PRINT30</span> at checkout.</span>
+            <span className="font-semibold">
+              {announcement.code
+                ? renderWithCode(announcement.text, announcement.code)
+                : announcement.text}
+            </span>
             <button
               onClick={() => setShowBanner(false)}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-1"
@@ -178,21 +169,33 @@ export default function Layout() {
                     <ChevronDown size={14} className={userMenuOpen ? "rotate-180" : ""} />
                   </button>
                   {userMenuOpen && (
-                    <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-border-light rounded-sm shadow-card-hover py-1 z-50">
-                      <div className="px-4 py-2 border-b border-border-light">
+                    <div className="absolute right-0 top-full mt-1 w-60 bg-white border border-border-light rounded-sm shadow-card-hover py-1 z-50">
+                      <div className="px-4 py-2.5 border-b border-border-light">
                         <div className="text-[13px] font-semibold text-text-dark truncate">{user?.name}</div>
-                        <div className="text-[11px] text-text-light truncate">{user?.email}</div>
+                        <div className="text-[11px] text-text-light truncate">
+                          {user?.phone ? formatPhone(user.phone) : user?.email}
+                        </div>
                       </div>
-                      <Link
-                        to="/cart"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2 px-4 py-2 text-[13px] text-text-dark hover:bg-vp-blue-light"
-                      >
-                        <ShoppingCart size={14} /> My cart
-                      </Link>
+                      {[
+                        { to: "/account/profile", label: "My Profile", icon: User },
+                        { to: "/account/orders", label: "My Orders", icon: Package },
+                        { to: "/account/addresses", label: "My Addresses", icon: MapPin },
+                        { to: "/account/wishlist", label: "Wishlist", icon: Heart },
+                        { to: "/cart", label: "My Cart", icon: ShoppingCart },
+                        { to: "/account/settings", label: "Account Settings", icon: Settings },
+                      ].map(({ to, label, icon: Icon }) => (
+                        <Link
+                          key={to}
+                          to={to}
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2 text-[13px] text-text-dark hover:bg-vp-blue-light"
+                        >
+                          <Icon size={14} className="text-text-light" /> {label}
+                        </Link>
+                      ))}
                       <button
                         onClick={handleLogout}
-                        className="w-full text-left flex items-center gap-2 px-4 py-2 text-[13px] text-text-dark hover:bg-vp-red-light hover:text-vp-red border-t border-border-light"
+                        className="w-full text-left flex items-center gap-2.5 px-4 py-2 text-[13px] text-text-dark hover:bg-vp-red-light hover:text-vp-red border-t border-border-light mt-1"
                       >
                         <LogOut size={14} /> Sign out
                       </button>
@@ -205,9 +208,14 @@ export default function Layout() {
                   <span className="font-medium">Sign In</span>
                 </Link>
               )}
-              <button className="hidden md:flex items-center gap-2 px-3 py-2 text-[13px] text-text-dark hover:text-vp-blue" aria-label="Wishlist">
+              <Link to="/account/wishlist" className="relative hidden md:flex items-center gap-2 px-3 py-2 text-[13px] text-text-dark hover:text-vp-blue" aria-label="Wishlist">
                 <Heart size={18} strokeWidth={1.75} />
-              </button>
+                {wishlistCount > 0 && (
+                  <span className="absolute top-0 right-0 min-w-[18px] h-[18px] bg-vp-red text-white text-[10px] font-bold flex items-center justify-center rounded-full px-1">
+                    {wishlistCount}
+                  </span>
+                )}
+              </Link>
               <Link to="/cart" className="relative flex items-center gap-2 px-3 py-2 text-[13px] text-text-dark hover:text-vp-blue">
                 <ShoppingCart size={20} strokeWidth={1.75} />
                 {totalItems > 0 && (
@@ -239,32 +247,31 @@ export default function Layout() {
         <nav className="hidden lg:block border-t border-border-light relative bg-white">
           <div className="max-w-[1400px] mx-auto px-4">
             <ul className="flex items-center gap-1">
-              {navItems.map((item) => (
+              {navCategories.map((cat) => (
                 <li
-                  key={item}
-                  onMouseEnter={() => setActiveMenu(item)}
+                  key={cat.name}
+                  onMouseEnter={() => setActiveMenu(cat.name)}
                   className="relative"
                 >
-                  <button
-                    className={`relative h-11 px-3 text-[13px] font-medium whitespace-nowrap transition-colors ${
-                      activeMenu === item
-                        ? "text-vp-blue"
-                        : "text-text-dark hover:text-vp-blue"
+                  <Link
+                    to={`/products?category=${encodeURIComponent(cat.name)}`}
+                    className={`relative inline-flex items-center h-11 px-3 text-[13px] font-medium whitespace-nowrap transition-colors ${
+                      activeMenu === cat.name ? "text-vp-blue" : "text-text-dark hover:text-vp-blue"
                     }`}
                   >
-                    {item}
-                    {activeMenu === item && (
+                    {cat.name}
+                    {activeMenu === cat.name && (
                       <span className="absolute bottom-0 left-2 right-2 h-[3px] bg-vp-blue" />
                     )}
-                  </button>
+                  </Link>
                 </li>
               ))}
             </ul>
           </div>
 
-          {/* Mega menu */}
+          {/* Mega menu — built from the hovered category's subcategories */}
           <AnimatePresence>
-            {activeMenu && (
+            {activeMenu && navCategories.find((c) => c.name === activeMenu)?.subcategories?.length > 0 && (
               <motion.div
                 key={activeMenu}
                 initial={{ opacity: 0, y: -4 }}
@@ -274,28 +281,20 @@ export default function Layout() {
                 className="absolute left-0 right-0 top-full bg-white border-t border-border-light shadow-lg z-40"
               >
                 <div className="max-w-[1400px] mx-auto px-4 py-8">
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-8">
-                    {megaMenu[activeMenu].map((col) => (
-                      <div key={col.heading}>
-                        <h4 className="text-[13px] font-bold text-text-dark mb-3 pb-2 border-b border-border-light">
-                          {col.heading}
-                        </h4>
-                        <ul className="space-y-2">
-                          {col.links.map((link) => (
-                            <li key={link}>
-                              <Link
-                                to={`/products?category=${encodeURIComponent(link)}`}
-                                onClick={() => setActiveMenu(null)}
-                                className="text-[13px] text-text-medium hover:text-vp-blue hover:underline block"
-                              >
-                                {link}
-                              </Link>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
+                  <h4 className="text-[13px] font-bold text-text-dark mb-3 pb-2 border-b border-border-light">{activeMenu}</h4>
+                  <ul className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2">
+                    {navCategories.find((c) => c.name === activeMenu).subcategories.map((sub) => (
+                      <li key={sub.slug}>
+                        <Link
+                          to={`/products?category=${encodeURIComponent(activeMenu)}&subcategory=${encodeURIComponent(sub.slug)}`}
+                          onClick={() => setActiveMenu(null)}
+                          className="text-[13px] text-text-medium hover:text-vp-blue hover:underline block py-0.5"
+                        >
+                          {sub.name}
+                        </Link>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                   <div className="mt-6 pt-4 border-t border-border-light">
                     <Link
                       to={`/products?category=${encodeURIComponent(activeMenu)}`}
@@ -339,20 +338,20 @@ export default function Layout() {
               </div>
               <div className="flex-1 overflow-y-auto">
                 <div className="py-2">
-                  {navItems.map((item) => (
-                    <div key={item} className="border-b border-border-light">
+                  {navCategories.map((cat) => (
+                    <div key={cat.name} className="border-b border-border-light">
                       <button
-                        onClick={() => setMobileExpanded(mobileExpanded === item ? null : item)}
+                        onClick={() => setMobileExpanded(mobileExpanded === cat.name ? null : cat.name)}
                         className="w-full flex items-center justify-between px-4 py-3 text-[14px] font-semibold text-text-dark"
                       >
-                        {item}
+                        {cat.name}
                         <ChevronDown
                           size={16}
-                          className={`transition-transform ${mobileExpanded === item ? "rotate-180" : ""}`}
+                          className={`transition-transform ${mobileExpanded === cat.name ? "rotate-180" : ""}`}
                         />
                       </button>
                       <AnimatePresence>
-                        {mobileExpanded === item && (
+                        {mobileExpanded === cat.name && (
                           <motion.div
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: "auto", opacity: 1 }}
@@ -360,27 +359,25 @@ export default function Layout() {
                             transition={{ duration: 0.2 }}
                             className="overflow-hidden bg-surface-alt"
                           >
-                            <div className="px-4 py-3 space-y-4">
-                              {megaMenu[item].map((col) => (
-                                <div key={col.heading}>
-                                  <h5 className="text-[11px] font-bold text-text-light uppercase tracking-wide mb-2">
-                                    {col.heading}
-                                  </h5>
-                                  <ul className="space-y-2">
-                                    {col.links.map((link) => (
-                                      <li key={link}>
-                                        <Link
-                                          to={`/products?category=${encodeURIComponent(link)}`}
-                                          onClick={closeMobileMenu}
-                                          className="text-[13px] text-text-dark hover:text-vp-blue block"
-                                        >
-                                          {link}
-                                        </Link>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              ))}
+                            <div className="px-4 py-3">
+                              <ul className="space-y-2">
+                                <li>
+                                  <Link to={`/products?category=${encodeURIComponent(cat.name)}`} onClick={closeMobileMenu} className="text-[13px] font-semibold text-vp-blue block">
+                                    All {cat.name}
+                                  </Link>
+                                </li>
+                                {cat.subcategories.map((sub) => (
+                                  <li key={sub.slug}>
+                                    <Link
+                                      to={`/products?category=${encodeURIComponent(cat.name)}&subcategory=${encodeURIComponent(sub.slug)}`}
+                                      onClick={closeMobileMenu}
+                                      className="text-[13px] text-text-dark hover:text-vp-blue block"
+                                    >
+                                      {sub.name}
+                                    </Link>
+                                  </li>
+                                ))}
+                              </ul>
                             </div>
                           </motion.div>
                         )}
@@ -392,8 +389,18 @@ export default function Layout() {
                   {isAuthenticated ? (
                     <>
                       <div className="text-[13px] text-text-light">
-                        Signed in as <span className="font-semibold text-text-dark">{user?.email}</span>
+                        Signed in as <span className="font-semibold text-text-dark">{user?.name}</span>
+                        {user?.phone && <span className="block text-[12px]">{formatPhone(user.phone)}</span>}
                       </div>
+                      <Link to="/account/profile" onClick={closeMobileMenu} className="flex items-center gap-2 text-[14px] text-text-dark">
+                        <User size={16} /> My Profile
+                      </Link>
+                      <Link to="/account/orders" onClick={closeMobileMenu} className="flex items-center gap-2 text-[14px] text-text-dark">
+                        <Package size={16} /> My Orders
+                      </Link>
+                      <Link to="/account/addresses" onClick={closeMobileMenu} className="flex items-center gap-2 text-[14px] text-text-dark">
+                        <MapPin size={16} /> My Addresses
+                      </Link>
                       <button
                         onClick={() => { handleLogout(); closeMobileMenu(); }}
                         className="flex items-center gap-2 text-[14px] text-vp-red"
@@ -402,14 +409,9 @@ export default function Layout() {
                       </button>
                     </>
                   ) : (
-                    <>
-                      <Link to="/login" onClick={closeMobileMenu} className="flex items-center gap-2 text-[14px] text-text-dark">
-                        <User size={16} /> Sign In
-                      </Link>
-                      <Link to="/signup" onClick={closeMobileMenu} className="flex items-center gap-2 text-[14px] text-text-dark">
-                        <User size={16} /> Create Account
-                      </Link>
-                    </>
+                    <Link to="/login" onClick={closeMobileMenu} className="flex items-center gap-2 text-[14px] text-text-dark">
+                      <User size={16} /> Sign In / Create Account
+                    </Link>
                   )}
                   <a href="#" className="flex items-center gap-2 text-[14px] text-text-dark">
                     <Phone size={16} /> 1800-419-2007
@@ -434,17 +436,60 @@ export default function Layout() {
         <div className="max-w-[1400px] mx-auto px-4 py-12">
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8">
             {[
-              { title: "Shop", links: ["Visiting Cards", "Marketing Materials", "Signs &amp; Posters", "Stationery", "Labels &amp; Stickers", "Clothing", "Mugs &amp; Gifts"] },
-              { title: "Help", links: ["Contact Us", "Help &amp; FAQ", "Order Status", "Shipping Info", "Returns", "Design Help"] },
-              { title: "Company", links: ["About Us", "Careers", "Press", "Sustainability", "Investor Relations"] },
-              { title: "Resources", links: ["Design Tips", "Blog", "Templates", "File Setup", "Bulk Orders"] },
+              {
+                title: "Shop",
+                links: [
+                  { label: "Visiting Cards", to: "/products?category=Visiting Cards" },
+                  { label: "Marketing Materials", to: "/products?category=Signs, Posters & Marketing" },
+                  { label: "Signs & Posters", to: "/products?category=Signs, Posters & Marketing" },
+                  { label: "Stationery", to: "/products?category=Stationery & Letterheads" },
+                  { label: "Labels & Stickers", to: "/products?category=Labels, Stickers & Packaging" },
+                  { label: "Clothing", to: "/products?category=Clothing & Caps" },
+                  { label: "Mugs & Gifts", to: "/products?category=Mugs, Albums & Gifts" },
+                ],
+              },
+              {
+                title: "Help",
+                links: [
+                  { label: "Contact Us", to: "/contact" },
+                  { label: "Help & FAQ", to: "/help" },
+                  { label: "Order Status", to: "/order-status" },
+                  { label: "Shipping Info", to: "/shipping" },
+                  { label: "Returns", to: "/returns" },
+                  { label: "Design Help", action: () => setHireOpen(true) },
+                ],
+              },
+              {
+                title: "Company",
+                links: [
+                  { label: "About Us", to: "/about" },
+                  { label: "Careers", to: "/careers" },
+                ],
+              },
+              {
+                title: "Resources",
+                links: [
+                  { label: "Design Tips", to: "/design-tips" },
+                  { label: "Blog", to: "/blog" },
+                  { label: "Templates", to: "/templates" },
+                  { label: "Bulk Orders", action: () => setBulkOpen(true) },
+                ],
+              },
             ].map((group) => (
               <div key={group.title}>
                 <h4 className="text-[13px] font-bold uppercase tracking-wide mb-4">{group.title}</h4>
                 <ul className="space-y-2.5">
                   {group.links.map((link) => (
-                    <li key={link}>
-                      <a href="#" className="text-[13px] text-white/80 hover:text-white hover:underline" dangerouslySetInnerHTML={{ __html: link }} />
+                    <li key={link.label}>
+                      {link.action ? (
+                        <button onClick={link.action} className="text-[13px] text-white/80 hover:text-white hover:underline text-left">
+                          {link.label}
+                        </button>
+                      ) : (
+                        <Link to={link.to} className="text-[13px] text-white/80 hover:text-white hover:underline">
+                          {link.label}
+                        </Link>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -491,6 +536,10 @@ export default function Layout() {
           </div>
         </div>
       </footer>
+
+      {/* Footer-triggered popups */}
+      <HireDesignerModal open={hireOpen} onClose={() => setHireOpen(false)} />
+      <BulkOrderModal open={bulkOpen} onClose={() => setBulkOpen(false)} />
     </div>
   );
 }

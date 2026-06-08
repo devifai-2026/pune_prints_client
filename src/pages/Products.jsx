@@ -1,42 +1,36 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   X, ChevronDown, ChevronRight, ChevronLeft,
-  Grid3X3, LayoutList, Star, Filter, Check, SlidersHorizontal
+  Grid3X3, LayoutList, Star, Filter, Check, SlidersHorizontal, Loader2, Heart
 } from "lucide-react";
+import { list as listProducts } from "@/api/products";
+import { list as listCategories } from "@/api/categories";
+import { useWishlist } from "@/context/WishlistContext.jsx";
 
 // --- Data ---
 
-const PRODUCTS = [
-  { id: 1, name: "Standard Visiting Cards", category: "Visiting Cards", desc: "350gsm · Premium matte · Double-sided", price: 149, old: 299, rating: 4.7, reviews: 4823, tag: null, finish: ["matte", "glossy"] },
-  { id: 2, name: "Square Visiting Cards", category: "Visiting Cards", desc: "2.5×2.5\" · Modern look · 350gsm", price: 199, old: 349, rating: 4.6, reviews: 1523, tag: null, finish: ["matte", "soft-touch"] },
-  { id: 3, name: "Spot UV Visiting Cards", category: "Visiting Cards", desc: "Premium gloss highlights · 400gsm", price: 299, old: 499, rating: 4.8, reviews: 1247, tag: "Popular", finish: ["glossy"] },
-  { id: 4, name: "Round Corner Visiting Cards", category: "Visiting Cards", desc: "Soft rounded edges · 350gsm matte", price: 199, old: 299, rating: 4.6, reviews: 892, tag: null, finish: ["matte"] },
-  { id: 5, name: "A5 Flyers (Single-sided)", category: "Flyers", desc: "150gsm · Vivid color print", price: 499, old: 699, rating: 4.6, reviews: 2341, tag: null, finish: ["glossy", "matte"] },
-  { id: 6, name: "A4 Flyers (Double-sided)", category: "Flyers", desc: "130gsm silk · Full color", price: 699, old: 999, rating: 4.5, reviews: 1341, tag: null, finish: ["glossy"] },
-  { id: 7, name: "Tri-fold Brochures", category: "Brochures", desc: "6-panel · 170gsm · Professional finish", price: 799, old: 1099, rating: 4.7, reviews: 892, tag: null, finish: ["glossy", "matte"] },
-  { id: 8, name: "Z-fold Brochures DL", category: "Brochures", desc: "Compact · 3 panels · Crisp colors", price: 899, old: 1199, rating: 4.4, reviews: 421, tag: null, finish: ["glossy", "matte"] },
-  { id: 9, name: "Roll-up Banner 85×200cm", category: "Banners", desc: "Premium vinyl · Carry case included", price: 1299, old: 1899, rating: 4.9, reviews: 1102, tag: "Best Seller", finish: ["matte"] },
-  { id: 10, name: "Outdoor PVC Banner", category: "Banners", desc: "Weatherproof · Eyelets · UV-print", price: 1999, old: 2799, rating: 4.7, reviews: 345, tag: null, finish: ["matte"] },
-  { id: 11, name: "Vinyl Sticker Sheet", category: "Stickers", desc: "Waterproof · Cut-to-shape", price: 99, old: 149, rating: 4.7, reviews: 3421, tag: null, finish: ["glossy", "matte"] },
-  { id: 12, name: "Die-cut Custom Stickers", category: "Stickers", desc: "Any shape · Premium vinyl · Bulk deals", price: 199, old: 349, rating: 4.7, reviews: 1562, tag: null, finish: ["glossy", "matte"] },
-  { id: 13, name: "Personalised Mugs", category: "Mugs", desc: "Ceramic · Microwave safe · Full wrap", price: 249, old: 399, rating: 4.6, reviews: 1532, tag: null, finish: ["glossy"] },
-  { id: 14, name: "Color Changing Mugs", category: "Color Changing Mugs", desc: "Magic heat-reveal print · Ceramic", price: 349, old: 499, rating: 4.5, reviews: 423, tag: null, finish: ["glossy"] },
-  { id: 15, name: "Custom Round-neck T-Shirts", category: "T-Shirts", desc: "100% cotton · Full-color DTG", price: 399, old: 599, rating: 4.6, reviews: 1834, tag: null, finish: ["matte"] },
-  { id: 16, name: "Premium Polo T-Shirts", category: "T-Shirts", desc: "Pique fabric · Embroidery option", price: 599, old: 799, rating: 4.5, reviews: 523, tag: null, finish: ["matte"] },
-  { id: 17, name: "Letterheads A4", category: "Stationery", desc: "120gsm bond · Executive finish", price: 199, old: 299, rating: 4.5, reviews: 723, tag: null, finish: ["matte"] },
-  { id: 18, name: "Invoice Books", category: "Stationery", desc: "Carbonless · 50/100 sheets", price: 449, old: 599, rating: 4.6, reviews: 412, tag: null, finish: ["matte"] },
-  { id: 19, name: "A3 Posters", category: "Posters", desc: "170gsm silk · Vivid color", price: 149, old: 249, rating: 4.7, reviews: 892, tag: null, finish: ["glossy", "matte"] },
-  { id: 20, name: "A2 Premium Posters", category: "Posters", desc: "200gsm · Soft-touch laminate", price: 299, old: 449, rating: 4.8, reviews: 445, tag: null, finish: ["glossy", "matte", "soft-touch"] },
-];
-
-const ALL_CATEGORIES = [
-  "Visiting Cards", "Flyers", "Brochures", "Banners", "Stickers",
-  "Mugs", "Color Changing Mugs", "T-Shirts", "Stationery", "Posters",
-];
+// Normalise an API product into the flat shape this page renders.
+function normalize(p) {
+  return {
+    id: p.id,
+    slug: p.slug,
+    name: p.name,
+    category: p.categoryName || "",
+    subcategory: p.subcategory || "",
+    subcategoryName: p.subcategoryName || "",
+    desc: p.description || "",
+    price: p.basePrice,
+    old: p.oldPrice || null,
+    rating: p.rating || 0,
+    reviews: p.reviewCount || 0,
+    badge: p.badges?.[0] || null,
+    image: p.images?.[0] || null,
+  };
+}
 
 const PRICE_RANGES = [
   { label: "Under ₹250", min: 0, max: 249 },
@@ -136,18 +130,48 @@ function Checkbox({ checked, onChange, label, count }) {
 
 function ProductCard({ p, view }) {
   const isList = view === "list";
+  const navigate = useNavigate();
+  const { isSaved, toggle } = useWishlist();
+  const saved = isSaved(p.id);
+
+  const onHeart = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const res = await toggle(p.id);
+    if (res?.requiresAuth) navigate("/login", { state: { from: "/products" } });
+  };
+
   return (
     <Link
-      to="/business-cards"
+      to={`/business-cards?slug=${encodeURIComponent(p.slug)}`}
       className={`group bg-white border border-border-light hover:border-vp-blue hover:shadow-card-hover transition-all rounded-sm overflow-hidden flex ${
         isList ? "flex-col sm:flex-row" : "flex-col"
       }`}
     >
       <div className={`relative ${isList ? "sm:w-[220px] sm:shrink-0" : ""}`}>
-        <PlaceholderImage label={p.name} ratio={isList ? "aspect-[4/3] sm:aspect-square" : "aspect-square"} />
-        {p.tag && (
-          <Badge variant="red" className="absolute top-2 left-2">{p.tag}</Badge>
+        {p.image ? (
+          <div className={`${isList ? "aspect-[4/3] sm:aspect-square" : "aspect-square"} overflow-hidden bg-surface`}>
+            <img src={p.image} alt={p.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+          </div>
+        ) : (
+          <PlaceholderImage label={p.name} ratio={isList ? "aspect-[4/3] sm:aspect-square" : "aspect-square"} />
         )}
+        {p.badge && (
+          <span className="absolute top-2 left-2 inline-flex items-center rounded-sm px-2 py-0.5 text-[11px] font-semibold leading-none shadow-sm"
+            style={{ background: p.badge.color || "#db1a3f", color: p.badge.textColor || "#ffffff" }}>
+            {p.badge.label || p.badge.type}
+          </span>
+        )}
+        {/* Wishlist heart */}
+        <button
+          onClick={onHeart}
+          aria-label={saved ? "Remove from wishlist" : "Save to wishlist"}
+          className={`absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center shadow-sm transition-colors ${
+            saved ? "bg-vp-red-light text-vp-red" : "bg-white/90 text-text-medium hover:text-vp-red"
+          }`}
+        >
+          <Heart size={15} fill={saved ? "currentColor" : "none"} />
+        </button>
       </div>
       <div className="p-3 lg:p-4 flex-1 flex flex-col">
         <h3 className="text-[14px] font-semibold text-text-dark group-hover:text-vp-blue leading-tight mb-1 line-clamp-2 min-h-[36px]">
@@ -162,7 +186,7 @@ function ProductCard({ p, view }) {
           <div>
             <span className="text-[11px] text-text-light">From </span>
             <span className="text-[16px] font-bold text-vp-blue">₹{p.price}</span>
-            <span className="text-[12px] text-text-light line-through ml-1.5">₹{p.old}</span>
+            {p.old && <span className="text-[12px] text-text-light line-through ml-1.5">₹{p.old}</span>}
           </div>
         </div>
       </div>
@@ -179,66 +203,104 @@ export default function Products() {
     const c = searchParams.get("category");
     return c ? new Set([c]) : new Set();
   });
+  const [subFilter, setSubFilter] = useState(() => searchParams.get("subcategory") || "");
   const [activePrices, setActivePrices] = useState(new Set());
-  const [activeFinishes, setActiveFinishes] = useState(new Set());
   const [sortBy, setSortBy] = useState("popular");
   const [view, setView] = useState("grid");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
 
+  // Live data from the API.
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]); // [{name, slug}]
+  const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState("");
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setLoadErr("");
+      try {
+        const [prods, cats] = await Promise.all([
+          listProducts({ limit: 60 }),
+          listCategories().catch(() => []),
+        ]);
+        if (cancelled) return;
+        setProducts((prods || []).map(normalize));
+        setCategories((cats || []).map((c) => ({ name: c.name, slug: c.slug, subcategories: c.subcategories || [] })));
+      } catch (err) {
+        if (!cancelled) setLoadErr(err?.message || "Failed to load products");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const c = searchParams.get("category");
     if (c) setActiveCats(new Set([c]));
     else setActiveCats(new Set());
+    setSubFilter(searchParams.get("subcategory") || "");
   }, [searchParams]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeCats, activePrices, activeFinishes, sortBy]);
+  }, [activeCats, activePrices, sortBy, subFilter]);
+
+  const ALL_CATEGORIES = useMemo(() => categories.map((c) => c.name), [categories]);
 
   const filtered = useMemo(() => {
-    let list = PRODUCTS;
+    let list = products;
     if (activeCats.size) list = list.filter((p) => activeCats.has(p.category));
+    if (subFilter) list = list.filter((p) => p.subcategory === subFilter);
     if (activePrices.size) {
       const ranges = PRICE_RANGES.filter((r) => activePrices.has(r.label));
       list = list.filter((p) => ranges.some((r) => p.price >= r.min && p.price <= r.max));
-    }
-    if (activeFinishes.size) {
-      list = list.filter((p) => p.finish.some((f) => activeFinishes.has(f.toLowerCase().replace(" ", "-"))));
     }
 
     return [...list].sort((a, b) => {
       if (sortBy === "price-asc") return a.price - b.price;
       if (sortBy === "price-desc") return b.price - a.price;
       if (sortBy === "rating") return b.rating - a.rating;
-      if (sortBy === "new") return b.id - a.id;
       return b.reviews - a.reviews;
     });
-  }, [activeCats, activePrices, activeFinishes, sortBy]);
+  }, [products, activeCats, activePrices, sortBy, subFilter]);
 
   const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
   const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const activeFilterCount = activeCats.size + activePrices.size + activeFinishes.size;
+  const activeFilterCount = activeCats.size + activePrices.size + (subFilter ? 1 : 0);
   const clearAll = () => {
     setActiveCats(new Set());
     setActivePrices(new Set());
-    setActiveFinishes(new Set());
+    setSubFilter("");
   };
 
-  const pageTitle = activeCats.size === 1 ? [...activeCats][0] : "All Products";
+  // Resolve the subcategory name (for the page title) from the loaded categories.
+  const subFilterName = useMemo(() => {
+    if (!subFilter) return "";
+    for (const c of categories) {
+      const sc = (c.subcategories || []).find((s) => s.slug === subFilter);
+      if (sc) return sc.name;
+    }
+    return subFilter;
+  }, [categories, subFilter]);
+
+  const pageTitle = subFilterName || (activeCats.size === 1 ? [...activeCats][0] : "All Products");
 
   // Counts per facet
   const categoryCounts = useMemo(() => {
     const counts = {};
-    PRODUCTS.forEach((p) => {
+    products.forEach((p) => {
       counts[p.category] = (counts[p.category] || 0) + 1;
     });
     return counts;
-  }, []);
+  }, [products]);
 
   const sidebar = (
     <div>
@@ -274,20 +336,6 @@ export default function Products() {
             label={r.label}
           />
         ))}
-      </FilterSection>
-
-      <FilterSection title="Finish">
-        {FINISHES.map((f) => {
-          const key = f.toLowerCase().replace(" ", "-");
-          return (
-            <Checkbox
-              key={f}
-              checked={activeFinishes.has(key)}
-              onChange={() => setActiveFinishes((s) => toggle(s, key))}
-              label={f}
-            />
-          );
-        })}
       </FilterSection>
     </div>
   );
@@ -414,7 +462,24 @@ export default function Products() {
             </div>
 
             {/* Grid */}
-            {filtered.length === 0 ? (
+            {loading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 lg:gap-4">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="border border-border-light rounded-sm overflow-hidden">
+                    <div className="aspect-square bg-surface animate-pulse" />
+                    <div className="p-4 space-y-2">
+                      <div className="h-4 bg-surface rounded animate-pulse" />
+                      <div className="h-3 w-2/3 bg-surface rounded animate-pulse" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : loadErr ? (
+              <div className="py-16 text-center border border-border-light rounded-sm bg-surface-alt">
+                <h3 className="text-[18px] font-semibold text-text-dark mb-2">Couldn't load products</h3>
+                <p className="text-[14px] text-text-light">{loadErr}</p>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="py-16 text-center border border-border-light rounded-sm bg-surface-alt">
                 <h3 className="text-[18px] font-semibold text-text-dark mb-2">No results found</h3>
                 <p className="text-[14px] text-text-light mb-6">Try adjusting your filters.</p>

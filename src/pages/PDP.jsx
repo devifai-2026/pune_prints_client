@@ -1,49 +1,51 @@
-import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useMemo } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ChevronRight, ChevronLeft, Star, Heart, Share2,
-  Truck, RotateCcw, ShieldCheck, Check, Info, ChevronDown,
+  Truck, RotateCcw, ShieldCheck, Check, Info, ChevronDown, Loader2, ImageIcon, ShoppingCart,
 } from "lucide-react";
+import { detail as fetchProduct, list as listProducts, share as shareProduct } from "@/api/products";
+import HireDesignerModal from "@/components/HireDesignerModal.jsx";
+import { useCart } from "@/context/CartContext.jsx";
+import { useWishlist } from "@/context/WishlistContext.jsx";
 
-// --- Data ---
+const DEFAULT_SLUG = "premium-visiting-cards";
 
-const sizeOptions = [
-  { id: "standard", label: "Standard", sub: '3.5" × 2"' },
-  { id: "square", label: "Square", sub: '2.5" × 2.5"' },
-  { id: "mini", label: "Slim", sub: '3.5" × 1.75"' },
-];
+// Map an option's tagStyle to a Badge variant.
+const TAG_VARIANT = { green: "green", yellow: "yellow", blue: "blue", red: "red" };
 
-const paperOptions = [
-  { id: "matte", label: "Matte", sub: "Premium 350gsm", priceDelta: 0 },
-  { id: "glossy", label: "Glossy", sub: "Vivid colors", priceDelta: 0 },
-  { id: "soft", label: "Soft Touch", sub: "Velvet feel", priceDelta: 80 },
-  { id: "recycled", label: "Recycled", sub: "Eco-friendly", priceDelta: 40 },
-];
+// --- Unit handling for size sublabels (e.g. '3.5" × 2"', "3.5cm x 2cm", "89mm x 51mm") ---
+// To mm: inch ×25.4, cm ×10, mm ×1. Display rounds sensibly per unit.
+const UNIT_TO_MM = { in: 25.4, cm: 10, mm: 1 };
+const UNIT_LABEL = { in: '"', cm: "cm", mm: "mm" };
 
-const qtyOptions = [
-  { q: 100, price: 149, save: null },
-  { q: 250, price: 299, save: "20%" },
-  { q: 500, price: 499, save: "30%", popular: true },
-  { q: 1000, price: 899, save: "40%" },
-  { q: 2500, price: 1899, save: "50%" },
-];
+// Detect a unit token in a string. Returns "in" | "cm" | "mm" | null.
+function detectUnit(str = "") {
+  const s = str.toLowerCase();
+  if (/(inch|in\b|")/.test(s)) return "in";
+  if (/mm/.test(s)) return "mm";
+  if (/cm/.test(s)) return "cm";
+  return null;
+}
 
-const thumbnails = [
-  { label: "Front view" },
-  { label: "Back view" },
-  { label: "Stacked" },
-  { label: "In hand" },
-  { label: "Close-up" },
-];
-
-const RELATED = [
-  { name: "A5 Flyers", price: "499", old: "699", reviews: 2341, rating: 4.6 },
-  { name: "Letterheads A4", price: "199", old: "299", reviews: 723, rating: 4.5 },
-  { name: "Roll-up Banner", price: "1,299", old: "1,899", reviews: 1102, rating: 4.9 },
-  { name: "Custom Envelopes", price: "349", old: "499", reviews: 412, rating: 4.6 },
-];
+// Convert a dimension sublabel to the target unit. Parses numbers + the
+// separator (× or x) and re-renders them in `target`. Falls back to original.
+function convertSublabel(sublabel, target) {
+  if (!sublabel || !target) return sublabel;
+  const from = detectUnit(sublabel);
+  if (!from || from === target) return sublabel;
+  const nums = sublabel.match(/[\d.]+/g);
+  if (!nums || !nums.length) return sublabel;
+  const conv = nums.map((n) => {
+    const mm = parseFloat(n) * UNIT_TO_MM[from];
+    const val = mm / UNIT_TO_MM[target];
+    const rounded = target === "mm" ? Math.round(val) : Math.round(val * 100) / 100;
+    return `${rounded}${UNIT_LABEL[target]}`;
+  });
+  return conv.join(" × ");
+}
 
 // --- Components ---
 
@@ -90,21 +92,176 @@ function AccordionRow({ title, defaultOpen = false, children }) {
   );
 }
 
+// Cartesian-match: find the variant matching the current option selection.
+function findVariant(product, sel) {
+  if (!product?.variants?.length) return null;
+  const keys = (product.optionGroups || []).map((g) => g.key);
+  return (
+    product.variants.find((v) => keys.every((k) => String(v.combo?.[k]) === String(sel[k]))) ||
+    product.variants.reduce((m, v) => (Number(v.price) < Number(m.price) ? v : m), product.variants[0])
+  );
+}
+
 // --- Page ---
 
 export default function PDP() {
   const navigate = useNavigate();
-  const [selectedSize, setSelectedSize] = useState("standard");
-  const [selectedPaper, setSelectedPaper] = useState("matte");
-  const [selectedQty, setSelectedQty] = useState(500);
-  const [selectedImage, setSelectedImage] = useState(0);
-  const [isLiked, setIsLiked] = useState(false);
+  const [searchParams] = useSearchParams();
+  const slug = searchParams.get("slug") || DEFAULT_SLUG;
 
-  const qtyOpt = qtyOptions.find((o) => o.q === selectedQty);
-  const paperOpt = paperOptions.find((p) => p.id === selectedPaper);
-  const basePrice = qtyOpt.price;
-  const finishCost = paperOpt.priceDelta;
-  const total = basePrice + finishCost;
+  const { addItem } = useCart();
+  const { isSaved, toggle: toggleWishlist } = useWishlist();
+
+  const [product, setProduct] = useState(null);
+  const [related, setRelated] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  const [sel, setSel] = useState({});           // groupKey -> optionValue
+  const [selectedImage, setSelectedImage] = useState(0);
+  const [unitOverride, setUnitOverride] = useState(null); // null = show as-authored
+  const [hireOpen, setHireOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addedToCart, setAddedToCart] = useState(false);
+  const [shareMsg, setShareMsg] = useState("");
+
+  const isLiked = product ? isSaved(product.id) : false;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setErr("");
+      setSelectedImage(0);
+      try {
+        const p = await fetchProduct(slug);
+        if (cancelled) return;
+        setProduct(p);
+        // Default selection = first option of each group.
+        const next = {};
+        (p.optionGroups || []).forEach((g) => {
+          const first = g.options?.[0];
+          if (first) next[g.key] = first.value;
+        });
+        setSel(next);
+        // Related = other products in the same category.
+        listProducts({ category: p.category?.slug || p.categoryName, limit: 5 })
+          .then((list) => !cancelled && setRelated((list || []).filter((x) => x.slug !== p.slug).slice(0, 4)))
+          .catch(() => {});
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "Product not found");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [slug]);
+
+  const variant = useMemo(() => findVariant(product, sel), [product, sel]);
+  const price = variant ? Number(variant.price) : product?.basePrice || 0;
+  const oldPrice = variant?.oldPrice ? Number(variant.oldPrice) : null;
+  const savePct = price && oldPrice && oldPrice > price ? Math.round((1 - price / oldPrice) * 100) : null;
+
+  // Structured breakdown of the chosen options: [{ label, value }].
+  const selectedOptions = useMemo(() => {
+    if (!product?.optionGroups?.length) return [];
+    return product.optionGroups
+      .map((g) => {
+        const opt = g.options?.find((o) => o.value === sel[g.key]);
+        return opt ? { label: g.label, value: opt.label } : null;
+      })
+      .filter(Boolean);
+  }, [product, sel]);
+
+  // Human-readable variant label (e.g. "500 · Matte").
+  const variantLabel = useMemo(() => selectedOptions.map((o) => o.value).join(" · "), [selectedOptions]);
+
+  const handleAddToCart = async () => {
+    if (!product) return;
+    setAdding(true);
+    try {
+      await addItem({ product: product.id, variant: variantLabel, options: selectedOptions, unitPrice: price, qty: 1 });
+      setAddedToCart(true);
+      setTimeout(() => setAddedToCart(false), 2500);
+    } catch {
+      /* surfaced via the cart; keep the button usable */
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleToggleWishlist = async () => {
+    if (!product) return;
+    const res = await toggleWishlist(product.id);
+    if (res?.requiresAuth) navigate("/login", { state: { from: `/business-cards?slug=${slug}` } });
+  };
+
+  const handleShare = async () => {
+    if (!product) return;
+    try {
+      // Record the share + get the canonical link from the backend.
+      const { url, name } = await shareProduct(product.slug);
+      const shareData = { title: name, text: `Check out ${name} on Pune Prints`, url };
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard?.writeText(url);
+        setShareMsg("Link copied!");
+        setTimeout(() => setShareMsg(""), 2000);
+      }
+    } catch {
+      /* user cancelled the share sheet, or clipboard blocked — ignore */
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white min-h-[60vh] flex items-center justify-center text-text-light">
+        <Loader2 size={20} className="animate-spin mr-2" /> Loading product…
+      </div>
+    );
+  }
+  if (err || !product) {
+    return (
+      <div className="bg-white min-h-[60vh] flex flex-col items-center justify-center gap-3 px-4 text-center">
+        <h1 className="text-[20px] font-bold text-text-dark">{err || "Product not found"}</h1>
+        <Link to="/products" className="text-vp-blue hover:underline text-[14px]">← Back to all products</Link>
+      </div>
+    );
+  }
+
+  // Gallery ALWAYS shows every photo: product photos first (no badge), then
+  // every option's photos, each tagged with the option's label (e.g. "500
+  // cards", "Rounded"). De-duplicated by src; the badge of the first owner wins.
+  const gallery = (() => {
+    const out = [];
+    const seen = new Set();
+    const push = (src, label) => {
+      if (!src || seen.has(src)) return;
+      seen.add(src);
+      out.push({ src, label });
+    };
+    (product.images || []).forEach((src) => push(src, ""));
+    (product.optionGroups || []).forEach((g) => {
+      (g.options || []).forEach((o) => {
+        (o.images || []).forEach((src) => push(src, o.label || o.value));
+      });
+    });
+    return out;
+  })();
+  const safeIndex = selectedImage < gallery.length ? selectedImage : 0;
+
+  // Picking an option jumps the gallery to that option's first photo so the
+  // shopper sees it immediately (the photo was already visible in the strip).
+  const selectOption = (groupKey, opt) => {
+    setSel((s) => ({ ...s, [groupKey]: opt.value }));
+    if (opt.images?.length) {
+      const i = gallery.findIndex((g) => g.src === opt.images[0]);
+      if (i >= 0) setSelectedImage(i);
+    }
+  };
+  const primaryBadge = product.badges?.[0];
+  const designUrl = `/design?product=${encodeURIComponent(product.name)}`;
 
   return (
     <div className="bg-white">
@@ -114,10 +271,14 @@ export default function PDP() {
           <Link to="/" className="hover:text-vp-blue">Home</Link>
           <ChevronRight size={12} />
           <Link to="/products" className="hover:text-vp-blue">Products</Link>
+          {product.categoryName && (
+            <>
+              <ChevronRight size={12} />
+              <Link to={`/products?category=${encodeURIComponent(product.categoryName)}`} className="hover:text-vp-blue">{product.categoryName}</Link>
+            </>
+          )}
           <ChevronRight size={12} />
-          <Link to="/products?category=Visiting%20Cards" className="hover:text-vp-blue">Visiting Cards</Link>
-          <ChevronRight size={12} />
-          <span className="text-text-dark">Premium Visiting Cards</span>
+          <span className="text-text-dark">{product.name}</span>
         </div>
       </div>
 
@@ -126,28 +287,48 @@ export default function PDP() {
         <div className="max-w-[1400px] mx-auto px-4 grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-8 lg:gap-12 items-start">
           {/* Gallery */}
           <div className="grid grid-cols-1 sm:grid-cols-[80px_1fr] gap-3 lg:sticky lg:top-28">
-            {/* Thumbnails */}
+            {/* Thumbnails — every option photo is always shown, with its tag */}
             <div className="order-2 sm:order-1 flex sm:flex-col gap-2 overflow-x-auto sm:overflow-visible no-scrollbar">
-              {thumbnails.map((t, i) => (
+              {gallery.map((g, i) => (
                 <button
                   key={i}
                   onClick={() => setSelectedImage(i)}
-                  className={`w-16 h-16 sm:w-20 sm:h-20 shrink-0 border rounded-sm overflow-hidden transition-colors ${
-                    selectedImage === i ? "border-vp-blue" : "border-border-light hover:border-text-light"
+                  className={`relative w-16 h-16 sm:w-20 sm:h-20 shrink-0 border rounded-sm overflow-hidden transition-colors ${
+                    safeIndex === i ? "border-vp-blue" : "border-border-light hover:border-text-light"
                   }`}
-                  aria-label={`View ${t.label}`}
+                  aria-label={g.label ? `View ${g.label}` : `View image ${i + 1}`}
+                  title={g.label || undefined}
                 >
-                  <PlaceholderImage label={null} ratio="aspect-square" />
+                  <img src={g.src} alt="" className="w-full h-full object-cover" />
+                  {g.label && (
+                    <span className="absolute bottom-0 inset-x-0 bg-text-dark/70 text-white text-[8px] font-semibold leading-tight px-1 py-0.5 truncate text-center">
+                      {g.label}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
 
             {/* Main image */}
             <div className="order-1 sm:order-2 relative border border-border-light rounded-sm overflow-hidden">
-              <PlaceholderImage label={thumbnails[selectedImage].label} ratio="aspect-square" />
+              {gallery[safeIndex] ? (
+                <div className="aspect-square bg-surface">
+                  <img src={gallery[safeIndex].src} alt={product.name} className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className="aspect-square ph-image-solid flex items-center justify-center text-text-muted">
+                  <ImageIcon size={36} />
+                </div>
+              )}
+              {/* Badge on the main image telling which option this photo is for */}
+              {gallery[safeIndex]?.label && (
+                <span className="absolute top-3 left-3 inline-flex items-center rounded-sm bg-vp-blue text-white text-[11px] font-semibold px-2 py-1 shadow-sm">
+                  {gallery[safeIndex].label}
+                </span>
+              )}
               <div className="absolute top-3 right-3 flex flex-col gap-2">
                 <button
-                  onClick={() => setIsLiked(!isLiked)}
+                  onClick={handleToggleWishlist}
                   className={`w-9 h-9 border rounded-sm flex items-center justify-center transition-colors ${
                     isLiked ? "bg-vp-red-light border-vp-red text-vp-red" : "bg-white border-border text-text-medium hover:border-vp-blue hover:text-vp-blue"
                   }`}
@@ -155,138 +336,151 @@ export default function PDP() {
                 >
                   <Heart size={16} fill={isLiked ? "currentColor" : "none"} />
                 </button>
-                <button className="w-9 h-9 bg-white border border-border rounded-sm flex items-center justify-center text-text-medium hover:border-vp-blue hover:text-vp-blue" aria-label="Share">
-                  <Share2 size={16} />
-                </button>
+                <div className="relative">
+                  <button onClick={handleShare} className="w-9 h-9 bg-white border border-border rounded-sm flex items-center justify-center text-text-medium hover:border-vp-blue hover:text-vp-blue" aria-label="Share">
+                    <Share2 size={16} />
+                  </button>
+                  {shareMsg && (
+                    <span className="absolute right-0 top-full mt-1 whitespace-nowrap text-[11px] font-semibold text-vp-green-dark bg-white border border-border-light rounded-sm px-2 py-1 shadow-sm">
+                      {shareMsg}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
           {/* Configurator */}
           <div>
-            <Badge variant="red" className="mb-3">Best Seller</Badge>
+            {product.badges?.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {product.badges.map((b, i) => (
+                  <span key={i} className="inline-flex items-center rounded-sm px-2 py-0.5 text-[11px] font-semibold leading-none"
+                    style={{ background: b.color || "#1a56db", color: b.textColor || "#ffffff" }}>
+                    {b.label || b.type}
+                  </span>
+                ))}
+              </div>
+            )}
             <h1 className="text-[26px] lg:text-[32px] font-bold text-text-dark leading-tight tracking-tight mb-2">
-              Premium Visiting Cards
+              {product.name}
             </h1>
-            <div className="flex items-center gap-3 mb-4">
-              <StarRow rating={4.8} />
-              <span className="text-[13px] text-text-dark font-semibold">4.8</span>
-              <a href="#reviews" className="text-[13px] text-vp-blue hover:underline">12,847 reviews</a>
-            </div>
-            <p className="text-[14px] text-text-medium leading-relaxed mb-6">
-              High-quality double-sided business cards printed on premium 350gsm card stock. Choose from matte, glossy, soft-touch and eco-friendly finishes.
-            </p>
+            {(product.rating > 0 || product.reviewCount > 0) && (
+              <div className="flex items-center gap-3 mb-4">
+                <StarRow rating={product.rating} />
+                <span className="text-[13px] text-text-dark font-semibold">{Number(product.rating).toFixed(1)}</span>
+                <a href="#reviews" className="text-[13px] text-vp-blue hover:underline">{Number(product.reviewCount).toLocaleString("en-IN")} reviews</a>
+              </div>
+            )}
+            {product.description && (
+              <p className="text-[14px] text-text-medium leading-relaxed mb-6">{product.description}</p>
+            )}
 
             {/* Price summary */}
             <div className="bg-surface-alt border border-border-light rounded-sm px-4 py-3 mb-6 flex items-baseline justify-between">
               <div>
-                <span className="text-[12px] text-text-light">Total for {selectedQty} cards</span>
+                <span className="text-[12px] text-text-light">Total</span>
                 <div className="flex items-baseline gap-2 mt-0.5">
-                  <span className="text-[24px] font-bold text-vp-blue">₹{total.toLocaleString("en-IN")}</span>
-                  <span className="text-[13px] text-text-light line-through">₹{Math.round(total * 1.4).toLocaleString("en-IN")}</span>
+                  <span className="text-[24px] font-bold text-vp-blue">₹{price.toLocaleString("en-IN")}</span>
+                  {oldPrice && oldPrice > price && (
+                    <span className="text-[13px] text-text-light line-through">₹{oldPrice.toLocaleString("en-IN")}</span>
+                  )}
                 </div>
               </div>
-              {qtyOpt.save && (
-                <Badge variant="green">Save {qtyOpt.save}</Badge>
-              )}
+              {savePct != null && <Badge variant="green">Save {savePct}%</Badge>}
             </div>
 
-            {/* Size */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-[13px] font-bold text-text-dark">Size</label>
-                <button className="text-[12px] text-vp-blue hover:underline flex items-center gap-1">
-                  <Info size={12} /> Size guide
-                </button>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {sizeOptions.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => setSelectedSize(s.id)}
-                    className={`text-left px-3 py-2.5 border rounded-sm transition-colors ${
-                      selectedSize === s.id
-                        ? "border-vp-blue bg-vp-blue-light"
-                        : "border-border hover:border-text-light"
-                    }`}
-                  >
-                    <div className="text-[13px] font-semibold text-text-dark">{s.label}</div>
-                    <div className="text-[11px] text-text-light">{s.sub}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Paper / Finish */}
-            <div className="mb-6">
-              <label className="block text-[13px] font-bold text-text-dark mb-2">Paper &amp; Finish</label>
-              <div className="grid grid-cols-2 gap-2">
-                {paperOptions.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelectedPaper(p.id)}
-                    className={`text-left px-3 py-2.5 border rounded-sm transition-colors ${
-                      selectedPaper === p.id
-                        ? "border-vp-blue bg-vp-blue-light"
-                        : "border-border hover:border-text-light"
-                    }`}
-                  >
-                    <div className="flex items-baseline justify-between">
-                      <div className="text-[13px] font-semibold text-text-dark">{p.label}</div>
-                      {p.priceDelta > 0 && <span className="text-[11px] text-text-light">+₹{p.priceDelta}</span>}
+            {/* Dynamic option groups */}
+            {(product.optionGroups || []).map((g) => {
+              // Detect which units appear across this group's sublabels.
+              const unitsPresent = [...new Set((g.options || []).map((o) => detectUnit(o.sublabel)).filter(Boolean))];
+              const showUnitSwap = unitsPresent.length > 1;
+              const activeUnit = unitOverride || unitsPresent[0] || null;
+              return (
+              <div key={g.key} className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[13px] font-bold text-text-dark">{g.label}</label>
+                  {showUnitSwap && (
+                    <div className="inline-flex border border-border rounded-sm overflow-hidden">
+                      {["in", "cm", "mm"].map((u) => (
+                        <button key={u} onClick={() => setUnitOverride(u)}
+                          className={`px-2 py-0.5 text-[11px] font-semibold transition-colors ${activeUnit === u ? "bg-vp-blue text-white" : "text-text-medium hover:bg-surface"}`}>
+                          {u === "in" ? "inch" : u}
+                        </button>
+                      ))}
                     </div>
-                    <div className="text-[11px] text-text-light">{p.sub}</div>
-                  </button>
-                ))}
+                  )}
+                </div>
+                {/* Quantity-style groups render as a radio list; others as a grid. */}
+                {g.key === "quantity" ? (
+                  <div className="border border-border-light rounded-sm overflow-hidden">
+                    {g.options.map((o, idx) => {
+                      const active = sel[g.key] === o.value;
+                      const optPrice = findVariant(product, { ...sel, [g.key]: o.value })?.price;
+                      return (
+                        <button
+                          key={o.value}
+                          onClick={() => selectOption(g.key, o)}
+                          className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${idx > 0 ? "border-t border-border-light" : ""} ${active ? "bg-vp-blue-light" : "hover:bg-surface-alt"}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className={`w-4 h-4 rounded-full border flex items-center justify-center ${active ? "border-vp-blue" : "border-border"}`}>
+                              {active && <span className="w-2 h-2 rounded-full bg-vp-blue" />}
+                            </span>
+                            <span className="text-[14px] font-medium text-text-dark">{o.label}</span>
+                            {o.tag && <Badge variant={TAG_VARIANT[o.tagStyle] || "green"}>{o.tag}</Badge>}
+                          </div>
+                          {optPrice != null && <span className="text-[14px] font-bold text-vp-blue">₹{Number(optPrice).toLocaleString("en-IN")}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className={`grid gap-2 ${g.options.length >= 4 ? "grid-cols-2" : "grid-cols-3"}`}>
+                    {g.options.map((o) => {
+                      const active = sel[g.key] === o.value;
+                      return (
+                        <button
+                          key={o.value}
+                          onClick={() => selectOption(g.key, o)}
+                          className={`text-left px-3 py-2.5 border rounded-sm transition-colors ${active ? "border-vp-blue bg-vp-blue-light" : "border-border hover:border-text-light"}`}
+                        >
+                          <div className="flex items-baseline justify-between gap-1">
+                            <div className="text-[13px] font-semibold text-text-dark">{o.label}</div>
+                            {Number(o.priceDelta) > 0 && <span className="text-[11px] text-text-light">+₹{o.priceDelta}</span>}
+                          </div>
+                          {o.sublabel && <div className="text-[11px] text-text-light">{showUnitSwap ? convertSublabel(o.sublabel, activeUnit) : o.sublabel}</div>}
+                          {o.tag && <div className="mt-1"><Badge variant={TAG_VARIANT[o.tagStyle] || "green"}>{o.tag}</Badge></div>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            </div>
-
-            {/* Quantity */}
-            <div className="mb-6">
-              <label className="block text-[13px] font-bold text-text-dark mb-2">Quantity</label>
-              <div className="border border-border-light rounded-sm overflow-hidden">
-                {qtyOptions.map((o, idx) => (
-                  <button
-                    key={o.q}
-                    onClick={() => setSelectedQty(o.q)}
-                    className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${
-                      idx > 0 ? "border-t border-border-light" : ""
-                    } ${selectedQty === o.q ? "bg-vp-blue-light" : "hover:bg-surface-alt"}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                        selectedQty === o.q ? "border-vp-blue" : "border-border"
-                      }`}>
-                        {selectedQty === o.q && <span className="w-2 h-2 rounded-full bg-vp-blue" />}
-                      </span>
-                      <span className="text-[14px] font-medium text-text-dark">{o.q} cards</span>
-                      {o.popular && <Badge variant="yellow">Most Popular</Badge>}
-                      {o.save && !o.popular && <Badge variant="green">Save {o.save}</Badge>}
-                    </div>
-                    <span className="text-[14px] font-bold text-vp-blue">₹{o.price}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+              );
+            })}
 
             {/* CTA */}
-            <Button
-              size="lg"
-              className="w-full text-[15px]"
-              onClick={() => navigate("/design?product=" + encodeURIComponent("Premium Visiting Cards"))}
-            >
+            <Button size="lg" className="w-full text-[15px]" onClick={() => navigate(designUrl)}>
               Start designing
             </Button>
+            <Button
+              variant="secondary"
+              size="lg"
+              className="w-full text-[15px] mt-2 flex items-center justify-center gap-2"
+              onClick={handleAddToCart}
+              disabled={adding || addedToCart}
+            >
+              {adding ? <Loader2 size={16} className="animate-spin" /> : addedToCart ? <Check size={16} /> : <ShoppingCart size={16} />}
+              {addedToCart ? "Added to cart" : `Add to cart · ₹${price.toLocaleString("en-IN")}`}
+            </Button>
             <div className="grid grid-cols-2 gap-2 mt-2">
-              <Button
-                variant="secondary"
-                size="default"
-                onClick={() => navigate("/design?product=" + encodeURIComponent("Premium Visiting Cards") + "&tool=uploads")}
-              >
+              <Button variant="secondary" size="default" onClick={() => navigate(designUrl + "&tool=uploads")}>
                 Upload your design
               </Button>
-              <Button variant="ghost" size="default">Hire a designer</Button>
+              <Button variant="ghost" size="default" onClick={() => setHireOpen(true)}>Hire a designer</Button>
             </div>
+            <HireDesignerModal open={hireOpen} onClose={() => setHireOpen(false)} productType={product.name} />
 
             {/* Delivery */}
             <div className="mt-6 space-y-2 text-[13px]">
@@ -304,21 +498,20 @@ export default function PDP() {
               </div>
             </div>
 
-            {/* Details accordions */}
+            {/* Details accordions — product details per-product, others global */}
             <div className="mt-8">
               <AccordionRow title="Product details" defaultOpen>
-                <ul className="space-y-1.5 list-disc list-inside">
-                  <li>Premium 350gsm card stock with double-sided full-color print</li>
-                  <li>Sizes: Standard 3.5×2", Square 2.5×2.5", Slim 3.5×1.75"</li>
-                  <li>Finishes: Matte, Glossy, Soft Touch, Recycled</li>
-                  <li>Optional spot UV and foil upgrades available at checkout</li>
-                </ul>
+                {product.details?.length ? (
+                  <ul className="space-y-1.5 list-disc list-inside">
+                    {product.details.map((d, i) => <li key={i}>{d}</li>)}
+                  </ul>
+                ) : <p>{product.description}</p>}
               </AccordionRow>
               <AccordionRow title="Design &amp; file requirements">
-                <p>Upload PDF, JPG, PNG or AI files up to 100MB. We recommend 300 DPI with 3mm bleed on all sides. Our team reviews every file before printing.</p>
+                <p className="whitespace-pre-line">{product.global?.designFileRequirements || "Contact us for file specifications."}</p>
               </AccordionRow>
               <AccordionRow title="Shipping &amp; returns">
-                <p>Express delivery 2–3 business days, standard 5–7 days. Returns accepted within 30 days for unused, undamaged products. Custom-printed items are non-refundable unless defective.</p>
+                <p className="whitespace-pre-line">{product.global?.shippingReturns || "Standard shipping and returns apply."}</p>
               </AccordionRow>
             </div>
           </div>
@@ -331,10 +524,10 @@ export default function PDP() {
           <div>
             <h2 className="text-[22px] font-bold text-text-dark tracking-tight mb-2">Customer reviews</h2>
             <div className="flex items-center gap-3 mb-2">
-              <span className="text-[36px] font-bold text-text-dark leading-none">4.8</span>
+              <span className="text-[36px] font-bold text-text-dark leading-none">{Number(product.rating || 0).toFixed(1)}</span>
               <div>
-                <StarRow rating={4.8} size={16} />
-                <p className="text-[12px] text-text-light mt-1">Based on 12,847 reviews</p>
+                <StarRow rating={product.rating} size={16} />
+                <p className="text-[12px] text-text-light mt-1">Based on {Number(product.reviewCount || 0).toLocaleString("en-IN")} reviews</p>
               </div>
             </div>
             <Button variant="secondary" size="sm" className="mt-3">Write a review</Button>
@@ -343,8 +536,8 @@ export default function PDP() {
             {[
               { name: "Rohan K.", date: "12 May 2026", rating: 5, text: "Print quality is excellent. Edges are crisp and the matte finish feels premium. Will reorder." },
               { name: "Sneha P.", date: "08 May 2026", rating: 5, text: "Designed online in 10 minutes, arrived in 4 days exactly as previewed. Recommended." },
-              { name: "Arjun V.", date: "01 May 2026", rating: 4, text: "Good quality cards. Colors are slightly different from screen but still acceptable." },
-              { name: "Anita S.", date: "28 Apr 2026", rating: 5, text: "Best prints I've used so far for client meetings. The soft-touch finish is a standout." },
+              { name: "Arjun V.", date: "01 May 2026", rating: 4, text: "Good quality. Colors are slightly different from screen but still acceptable." },
+              { name: "Anita S.", date: "28 Apr 2026", rating: 5, text: "Best prints I've used so far for client meetings. The finish is a standout." },
             ].map((r) => (
               <div key={r.name} className="bg-white border border-border-light rounded-sm p-4">
                 <div className="flex items-center justify-between mb-1">
@@ -360,40 +553,46 @@ export default function PDP() {
       </section>
 
       {/* Related */}
-      <section className="border-t border-border-light py-10 bg-white">
-        <div className="max-w-[1400px] mx-auto px-4">
-          <div className="flex items-end justify-between mb-5">
-            <h2 className="text-[22px] font-bold text-text-dark tracking-tight">You might also like</h2>
-            <Link to="/products" className="text-[13px] font-semibold text-vp-blue hover:underline flex items-center gap-1">
-              See all <ChevronRight size={14} />
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 lg:gap-4">
-            {RELATED.map((p) => (
-              <Link
-                key={p.name}
-                to="/products"
-                className="group block bg-white border border-border-light hover:border-vp-blue hover:shadow-card-hover transition-all rounded-sm overflow-hidden"
-              >
-                <PlaceholderImage label={p.name} ratio="aspect-square" />
-                <div className="p-3 lg:p-4">
-                  <h3 className="text-[14px] font-semibold text-text-dark group-hover:text-vp-blue leading-tight mb-1.5 min-h-[36px] line-clamp-2">
-                    {p.name}
-                  </h3>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <StarRow rating={p.rating} />
-                    <span className="text-[11px] text-text-light">({p.reviews.toLocaleString("en-IN")})</span>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-[15px] font-bold text-vp-blue">₹{p.price}</span>
-                    <span className="text-[12px] text-text-light line-through">₹{p.old}</span>
-                  </div>
-                </div>
+      {related.length > 0 && (
+        <section className="border-t border-border-light py-10 bg-white">
+          <div className="max-w-[1400px] mx-auto px-4">
+            <div className="flex items-end justify-between mb-5">
+              <h2 className="text-[22px] font-bold text-text-dark tracking-tight">You might also like</h2>
+              <Link to="/products" className="text-[13px] font-semibold text-vp-blue hover:underline flex items-center gap-1">
+                See all <ChevronRight size={14} />
               </Link>
-            ))}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 lg:gap-4">
+              {related.map((p) => (
+                <Link
+                  key={p.id}
+                  to={`/business-cards?slug=${encodeURIComponent(p.slug)}`}
+                  className="group block bg-white border border-border-light hover:border-vp-blue hover:shadow-card-hover transition-all rounded-sm overflow-hidden"
+                >
+                  {p.images?.[0] ? (
+                    <div className="aspect-square overflow-hidden bg-surface">
+                      <img src={p.images[0]} alt={p.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    </div>
+                  ) : (
+                    <PlaceholderImage label={p.name} ratio="aspect-square" />
+                  )}
+                  <div className="p-3 lg:p-4">
+                    <h3 className="text-[14px] font-semibold text-text-dark group-hover:text-vp-blue leading-tight mb-1.5 min-h-[36px] line-clamp-2">{p.name}</h3>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <StarRow rating={p.rating} />
+                      <span className="text-[11px] text-text-light">({Number(p.reviewCount || 0).toLocaleString("en-IN")})</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[15px] font-bold text-vp-blue">₹{p.basePrice}</span>
+                      {p.oldPrice > p.basePrice && <span className="text-[12px] text-text-light line-through">₹{p.oldPrice}</span>}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }

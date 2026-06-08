@@ -2,6 +2,8 @@ import { http } from "./http.js";
 
 export const list = (query = {}) => http.get("/products", { query });
 export const detail = (slug) => http.get(`/products/${slug}`);
+// Records a share + returns the canonical link: { slug, name, url, shareCount }.
+export const share = (slug) => http.post(`/products/${slug}/share`);
 
 // Admin
 export const adminList = (query = {}) => http.get("/admin/products", { query });

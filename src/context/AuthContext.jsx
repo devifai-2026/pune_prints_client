@@ -43,6 +43,20 @@ export function AuthProvider({ children }) {
     return u;
   };
 
+  // Phone auth — step 0: check if the number is already registered.
+  const lookupPhone = (phone) => authApi.lookupPhone(phone);
+
+  // Phone auth — step 1: just requests the OTP, no session change yet.
+  const requestOtp = (payload) => authApi.requestOtp(payload);
+
+  // Phone auth — step 2: verifying the code logs the user in.
+  const verifyOtp = async (payload) => {
+    const u = await authApi.verifyOtp(payload);
+    setUser(u);
+    setStatus("authenticated");
+    return u;
+  };
+
   const logout = async () => {
     await authApi.logout();
     disconnectAllSockets();
@@ -57,6 +71,9 @@ export function AuthProvider({ children }) {
     isAdmin: user?.role === "admin",
     login,
     signup,
+    lookupPhone,
+    requestOtp,
+    verifyOtp,
     logout,
   }), [user, status]);
 

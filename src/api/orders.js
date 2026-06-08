@@ -1,6 +1,7 @@
 import { http } from "./http.js";
 
 export const checkout = (payload) => http.post("/orders/checkout", payload);
+export const publicStatus = (orderNumber) => http.get(`/orders/status/${encodeURIComponent(orderNumber)}`);
 export const myOrders = (query = {}) => http.get("/orders", { query });
 export const myOrderDetail = (id) => http.get(`/orders/${id}`);
 
