@@ -5,7 +5,7 @@
 //  - On 401, attempts a single silent /auth/refresh and replays the request.
 //  - Always sends credentials so refresh cookie flows.
 
-const BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000/api/v1";
+import { API_BASE as BASE } from "./config.js";
 
 // ── Token store ─────────────────────────────────────────────────────────
 // In-memory access token (lives for the tab session). The httpOnly refresh

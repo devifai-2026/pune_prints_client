@@ -4,8 +4,7 @@
 
 import { io } from "socket.io-client";
 import { tokenStore } from "./http.js";
-
-const BASE = import.meta.env.VITE_SOCKET_BASE || "http://localhost:4000";
+import { SOCKET_BASE as BASE } from "./config.js";
 
 let templatesSocket = null;
 let ordersSocket = null;
